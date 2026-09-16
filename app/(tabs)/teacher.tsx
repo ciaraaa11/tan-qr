@@ -1,4 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import {
   Platform,
@@ -10,27 +13,6 @@ import {
   View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-
-type DateTimePickerEvent = {
-  type: 'set' | 'dismissed';
-  nativeEvent?: { timestamp?: number };
-};
-
-type DateTimePickerProps = {
-  value: Date;
-  mode?: 'date' | 'time' | 'datetime';
-  display?: 'default' | 'spinner' | 'compact' | 'inline';
-  onChange: (event: DateTimePickerEvent, selected?: Date) => void;
-};
-
-let DateTimePicker: ((props: DateTimePickerProps) => JSX.Element | null) | null = null;
-
-try {
-  const pickerModule = require('@react-native-community/datetimepicker');
-  DateTimePicker = pickerModule?.default ?? pickerModule;
-} catch {
-  DateTimePicker = null;
-}
 
 import AppButton from '@/components/AppButton';
 import { COLORS } from '@/constants/colors';

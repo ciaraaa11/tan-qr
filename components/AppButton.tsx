@@ -8,6 +8,7 @@ type Props = {
   icon: keyof typeof Ionicons.glyphMap;
   theme?: 'primary';
   onPress: () => void;
+  disabled?: boolean;
 };
 
 export default function AppButton({ title, icon, theme, onPress }: Props) {
