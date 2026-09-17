@@ -74,4 +74,13 @@ const styles = StyleSheet.create({
   },
   icon: { paddingRight: 10 },
   label: { fontSize: 17, fontWeight: '600', color: COLORS.textPrimary },
+  // The shadow block was REMOVED from buttonInner:
+//   shadowColor, shadowOffset, shadowOpacity, shadowRadius, elevation
+// Replaced with a flat hairline for the secondary variant:
+  secondaryFill: {
+  backgroundColor: COLORS.card,
+  borderWidth: 1,
+  borderColor: COLORS.border,
+  },
+
 });

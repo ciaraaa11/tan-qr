@@ -40,8 +40,25 @@ export function useAuth(): AuthState {
   };
 }
 
-export async function signUp(email: string, password: string) {
+export type SignUpProfile = {
+  full_name: string;
+  role: 'student' | 'teacher';
+};
+
+export async function signUp(
+  email: string,
+  password: string,
+  profile?: SignUpProfile
+) {
   const { data, error } = await supabase.auth.signUp({ email, password });
+  if (!error && data.session && profile) {
+    // The Phase 3 trigger creates the profile row on signup.
+    // Fill in the full_name and role the student chose.
+    await supabase
+      .from('profiles')
+      .update({ full_name: profile.full_name, role: profile.role })
+      .eq('id', data.session.user.id);
+  }
   if (!error && data.session) {
     setAuth(data.session);
   }
