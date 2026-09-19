@@ -1,113 +1,172 @@
-import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 
-import { COLORS } from "@/constants/colors";
-import { useAuth } from "@/lib/auth";
-import { getAttendanceHistory, type AttendanceRecord } from "@/lib/database";
-
-type Role = "student" | "teacher";
-
-type TeacherEventAttendance = {
-  id: string | number;
-  eventId: string;
-  eventTitle: string;
-  scannedAt?: string;
-  createdAt?: string;
-  totalAttendees?: number;
-};
-
-type HistoryItem = AttendanceRecord | TeacherEventAttendance;
+import { COLORS } from '@/constants/colors';
+import {
+  getAttendanceHistory,
+  getTeacherEventAttendance,
+  type AttendanceRecord,
+  type TeacherEventAttendance,
+} from '@/lib/attendance';
+import { useAuth } from '@/lib/auth';
+import { getProfile, type Role } from '@/lib/profile';
 
 export default function HistoryScreen() {
+  const { user } = useAuth();
+
+  const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<Role | null>(null);
   const [studentRecords, setStudentRecords] = useState<AttendanceRecord[]>([]);
-  const [teacherEvents, setTeacherEvents] = useState<TeacherEventAttendance[]>(
-    [],
-  );
-  const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const [teacherEvents, setTeacherEvents] =
+    useState<TeacherEventAttendance[]>([]);
 
   const load = useCallback(async () => {
     if (!user) {
-      setRole(null);
-      setStudentRecords([]);
-      setTeacherEvents([]);
       setLoading(false);
       return;
     }
 
-    try {
-      const currentRole = (user as { role?: Role } | null)?.role ?? "student";
-      setRole(currentRole);
+    const profile = await getProfile(user.id);
+    const currentRole = profile?.role ?? 'student';
+    setRole(currentRole);
 
-      if (currentRole === "teacher") {
-        setTeacherEvents([]);
-        setStudentRecords([]);
-      } else {
-        const records = await getAttendanceHistory(user.id);
-        setStudentRecords(records);
-        setTeacherEvents([]);
-      }
-    } finally {
-      setLoading(false);
+    if (currentRole === 'teacher') {
+      const events = await getTeacherEventAttendance(user.id);
+      setTeacherEvents(events);
+      setStudentRecords([]);
+    } else {
+      const records = await getAttendanceHistory(user.id);
+      setStudentRecords(records);
+      setTeacherEvents([]);
     }
+
+    setLoading(false);
   }, [user]);
 
   useFocusEffect(
     useCallback(() => {
-      void load();
-    }, [load]),
+      setLoading(true);
+      load();
+    }, [load])
   );
 
-  const records = role === "teacher" ? teacherEvents : studentRecords;
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Attendance History</Text>
+        <Text style={styles.subtitle}>Loading records...</Text>
+      </View>
+    );
+  }
+
+  if (role === 'teacher') {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Attendance History</Text>
+
+        {teacherEvents.length === 0 ? (
+          <Text style={styles.subtitle}>
+            No events yet.
+          </Text>
+        ) : (
+          <FlatList
+            data={teacherEvents}
+            keyExtractor={(item) => item.eventId}
+            contentContainerStyle={styles.list}
+            renderItem={({ item }) => (
+              <View style={styles.card}>
+                <View style={styles.eventHeader}>
+                  <Text style={styles.eventTitle}>{item.title}</Text>
+
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countText}>
+                      {item.attendeeCount}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.eventMeta}>
+                  {item.eventCode}
+                </Text>
+
+                {item.startTime && (
+                  <Text style={styles.eventMeta}>
+                    {formatDate(item.startTime)}
+                  </Text>
+                )}
+
+                {item.attendees.length === 0 ? (
+                  <Text style={styles.attendeeEmpty}>
+                    No attendees yet.
+                  </Text>
+                ) : (
+                  <View style={styles.attendeeList}>
+                    {item.attendees.map((attendee) => (
+                      <View
+                        key={attendee.studentId}
+                        style={styles.attendeeRow}
+                      >
+                        <Text style={styles.attendeeName}>
+                          {attendee.studentName ||
+                            shortId(attendee.studentId)}
+                        </Text>
+
+                        <Text style={styles.eventMeta}>
+                          {formatDate(attendee.scannedAt)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Attendance History</Text>
 
-      {loading ? (
-        <Text style={styles.subtitle}>Loading records...</Text>
-      ) : records.length === 0 ? (
+      {studentRecords.length === 0 ? (
         <Text style={styles.subtitle}>
-          {role === "teacher"
-            ? "No events with attendance records yet."
-            : "No records yet. Scan a QR code to register your attendance."}
+          No records yet. Scan a QR code to register your attendance.
         </Text>
       ) : (
         <FlatList
-          data={teacherEvents}
+          data={studentRecords}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            const title =
-              "eventTitle" in item ? item.eventTitle : "Attendance Event";
-            const eventId = "eventId" in item ? item.eventId : "—";
-            const timestamp =
-              "scannedAt" in item
-                ? (item as AttendanceRecord).scannedAt ?? new Date().toISOString()
-                : "createdAt" in item
-                  ? ((item as TeacherEventAttendance).createdAt ??
-                      new Date().toISOString())
-                  : new Date().toISOString();
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <Text style={styles.eventTitle}>
+                {item.eventTitle}
+              </Text>
 
-            return (
-              <View style={styles.card}>
-                <Text style={styles.eventTitle}>{title}</Text>
-                <Text style={styles.eventMeta}>{eventId}</Text>
-                <Text style={styles.eventMeta}>{formatDate(timestamp)}</Text>
-              </View>
-            );
-          }}
+              <Text style={styles.eventMeta}>
+                {item.eventId}
+              </Text>
+
+              <Text style={styles.eventMeta}>
+                {formatDate(item.scannedAt)}
+              </Text>
+            </View>
+          )}
         />
       )}
     </View>
   );
 }
 
-function formatDate(iso?: string) {
-  if (!iso) return "—";
+function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
+}
+
+function shortId(id: string) {
+  return id ? `…${id.slice(-8)}` : 'unknown';
 }
 
 const styles = StyleSheet.create({
@@ -119,14 +178,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: '600',
     color: COLORS.textPrimary,
     marginBottom: 16,
   },
   subtitle: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    textAlign: "center",
+    textAlign: 'center',
     lineHeight: 20,
     marginTop: 32,
   },
@@ -144,15 +203,51 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  eventHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   eventTitle: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
     color: COLORS.textPrimary,
     marginBottom: 4,
+    flex: 1,
   },
   eventMeta: {
     fontSize: 13,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  countBadge: {
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginLeft: 12,
+  },
+  countText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  attendeeList: {
+    marginTop: 12,
+  },
+  attendeeRow: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingVertical: 10,
+  },
+  attendeeName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  attendeeEmpty: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 12,
   },
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,20 +10,20 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
-} from 'react-native';
-import { Link, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native";
+import { Link } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import AppButton from '@/components/AppButton';
-import Header from '@/components/Header';
-import { COLORS } from '@/constants/colors';
-import { signIn } from '@/lib/auth';
+import AppButton from "@/components/AppButton";
+import Header from "@/components/Header";
+import { COLORS } from "@/constants/colors";
+import { signIn } from "@/lib/auth";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -32,15 +32,13 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const { data, error: authError } = await signIn(email.trim(), password);
+      const { error: authError } = await signIn(email.trim(), password);
 
       if (authError) {
         setError(authError.message);
-      } else {
-        router.replace('/(tabs)');
       }
     } catch (err: any) {
-      setError(err?.message || 'Unexpected error');
+      setError(err?.message || "Unexpected error");
     } finally {
       setLoading(false);
     }
@@ -50,8 +48,8 @@ export default function LoginScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <ScrollView
@@ -64,10 +62,14 @@ export default function LoginScreen() {
             </View>
 
             <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to record your attendance</Text>
+
+            <Text style={styles.subtitle}>
+              Sign in to record your attendance
+            </Text>
 
             <View style={styles.form}>
               <Text style={styles.label}>Email</Text>
+
               <TextInput
                 style={styles.input}
                 value={email}
@@ -80,6 +82,7 @@ export default function LoginScreen() {
               />
 
               <Text style={styles.label}>Password</Text>
+
               <TextInput
                 style={styles.input}
                 value={password}
@@ -92,16 +95,22 @@ export default function LoginScreen() {
 
               {error && <Text style={styles.error}>{error}</Text>}
 
-              {loading ? (
-                <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
-              ) : (
-                <AppButton
-                  theme="primary"
-                  title="Sign In"
-                  icon="log-in-outline"
-                  onPress={handleLogin}
-                />
-              )}
+              <View style={styles.signInContainer}>
+                {loading ? (
+                  <ActivityIndicator
+                    size="large"
+                    color={COLORS.primary}
+                    style={styles.loader}
+                  />
+                ) : (
+                  <AppButton
+                    theme="primary"
+                    title="Sign In"
+                    icon="log-in-outline"
+                    onPress={handleLogin}
+                  />
+                )}
+              </View>
             </View>
 
             <Link href="/register" style={styles.link}>
@@ -128,21 +137,20 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   headerContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 20,
     marginBottom: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: "700",
     color: COLORS.textPrimary,
-    textAlign: 'center',
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: COLORS.textSecondary,
-    textAlign: 'center',
+    lineHeight: 21,
     marginBottom: 32,
   },
   form: {
@@ -150,25 +158,28 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
     marginBottom: 6,
     marginTop: 10,
   },
   input: {
     backgroundColor: COLORS.card,
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 15,
+    fontSize: 16,
     color: COLORS.textPrimary,
+  },
+  signInContainer: {
+    marginTop: 16,
   },
   error: {
     fontSize: 14,
-    color: '#C62828',
-    textAlign: 'center',
+    color: COLORS.danger,
+    textAlign: "left",
     marginTop: 12,
     marginBottom: 4,
   },
@@ -178,7 +189,7 @@ const styles = StyleSheet.create({
   link: {
     fontSize: 14,
     color: COLORS.primary,
-    textAlign: 'center',
-    fontWeight: '600',
+    textAlign: "center",
+    fontWeight: "600",
   },
 });

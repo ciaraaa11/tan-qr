@@ -7,7 +7,7 @@ export type Profile = {
   email: string;
   full_name: string | null;
   role: Role;
-}
+};
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -33,5 +33,4 @@ export async function updateProfile(
     .eq('id', userId);
 
   return { error: error?.message ?? null };
-};
-
+}

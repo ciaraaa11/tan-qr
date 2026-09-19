@@ -11,18 +11,26 @@ type Props = {
   disabled?: boolean;
 };
 
-export default function AppButton({ title, icon, theme, onPress }: Props) {
+export default function AppButton({
+  title,
+  icon,
+  theme,
+  onPress,
+  disabled = false,
+}: Props) {
   if (theme === 'primary') {
     return (
       <View
         style={[
           styles.buttonOuter,
-          { borderWidth: 3, borderColor: COLORS.primary, borderRadius: 18 },
+          { borderWidth: 1, borderColor: COLORS.primary, borderRadius: 10 },
+          disabled && styles.disabled,
         ]}
       >
         <Pressable
           style={[styles.buttonInner, { backgroundColor: COLORS.primary }]}
           onPress={onPress}
+          disabled={disabled}
         >
           <Ionicons
             name={icon}
@@ -30,7 +38,7 @@ export default function AppButton({ title, icon, theme, onPress }: Props) {
             color={COLORS.textOnPrimary}
             style={styles.icon}
           />
-          <Text style={[styles.label, { color: COLORS.textOnPrimary }]}>
+          <Text style={[styles.label, { color: COLORS.textOnPrimary, fontWeight: '700'}]}>
             {title}
           </Text>
         </Pressable>
@@ -39,8 +47,12 @@ export default function AppButton({ title, icon, theme, onPress }: Props) {
   }
 
   return (
-    <View style={styles.buttonOuter}>
-      <Pressable style={styles.buttonInner} onPress={onPress}>
+    <View style={[styles.buttonOuter, disabled && styles.disabled]}>
+      <Pressable
+        style={[styles.buttonInner, styles.secondaryFill]}
+        onPress={onPress}
+        disabled={disabled}
+      >
         <Ionicons
           name={icon}
           size={22}
@@ -59,28 +71,27 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   buttonInner: {
-    borderRadius: 14,
+    borderRadius: 10,
     paddingVertical: 16,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    backgroundColor: COLORS.card,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  icon: { paddingRight: 10 },
-  label: { fontSize: 17, fontWeight: '600', color: COLORS.textPrimary },
-  // The shadow block was REMOVED from buttonInner:
-//   shadowColor, shadowOffset, shadowOpacity, shadowRadius, elevation
-// Replaced with a flat hairline for the secondary variant:
   secondaryFill: {
-  backgroundColor: COLORS.card,
-  borderWidth: 1,
-  borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-
+  disabled: {
+    opacity: 0.55,
+  },
+  icon: {
+    paddingRight: 10,
+  },
+  label: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
 });

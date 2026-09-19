@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   },
   error: {
     fontSize: 14,
-    color: '#D32F2F',
+    color: COLORS.danger,
     textAlign: 'left',
     marginTop: 12,
     marginBottom: 4,
