@@ -1,8 +1,8 @@
-import { Stack } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Stack } from "expo-router";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { COLORS } from '@/constants/colors';
-import { useAuth } from '@/lib/auth';
+import { COLORS } from "@/constants/colors";
+import { useAuth } from "@/lib/auth";
 
 export default function RootLayout() {
   const { session, loading } = useAuth();
@@ -10,10 +10,7 @@ export default function RootLayout() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator
-          size="large"
-          color={COLORS.primary}
-        />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
@@ -35,8 +32,8 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: COLORS.background,
   },
 });

@@ -1,16 +1,16 @@
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 
-import { COLORS } from '@/constants/colors';
+import { COLORS } from "@/constants/colors";
 import {
   getAttendanceHistory,
   getTeacherEventAttendance,
   type AttendanceRecord,
   type TeacherEventAttendance,
-} from '@/lib/attendance';
-import { useAuth } from '@/lib/auth';
-import { getProfile, type Role } from '@/lib/profile';
+} from "@/lib/attendance";
+import { useAuth } from "@/lib/auth";
+import { getProfile, type Role } from "@/lib/profile";
 
 export default function HistoryScreen() {
   const { user } = useAuth();
@@ -18,8 +18,9 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<Role | null>(null);
   const [studentRecords, setStudentRecords] = useState<AttendanceRecord[]>([]);
-  const [teacherEvents, setTeacherEvents] =
-    useState<TeacherEventAttendance[]>([]);
+  const [teacherEvents, setTeacherEvents] = useState<TeacherEventAttendance[]>(
+    [],
+  );
 
   const load = useCallback(async () => {
     if (!user) {
@@ -28,10 +29,10 @@ export default function HistoryScreen() {
     }
 
     const profile = await getProfile(user.id);
-    const currentRole = profile?.role ?? 'student';
+    const currentRole = profile?.role ?? "student";
     setRole(currentRole);
 
-    if (currentRole === 'teacher') {
+    if (currentRole === "teacher") {
       const events = await getTeacherEventAttendance(user.id);
       setTeacherEvents(events);
       setStudentRecords([]);
@@ -48,7 +49,7 @@ export default function HistoryScreen() {
     useCallback(() => {
       setLoading(true);
       load();
-    }, [load])
+    }, [load]),
   );
 
   if (loading) {
@@ -60,15 +61,13 @@ export default function HistoryScreen() {
     );
   }
 
-  if (role === 'teacher') {
+  if (role === "teacher") {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Attendance History</Text>
 
         {teacherEvents.length === 0 ? (
-          <Text style={styles.subtitle}>
-            No events yet.
-          </Text>
+          <Text style={styles.subtitle}>No events yet.</Text>
         ) : (
           <FlatList
             data={teacherEvents}
@@ -80,15 +79,11 @@ export default function HistoryScreen() {
                   <Text style={styles.eventTitle}>{item.title}</Text>
 
                   <View style={styles.countBadge}>
-                    <Text style={styles.countText}>
-                      {item.attendeeCount}
-                    </Text>
+                    <Text style={styles.countText}>{item.attendeeCount}</Text>
                   </View>
                 </View>
 
-                <Text style={styles.eventMeta}>
-                  {item.eventCode}
-                </Text>
+                <Text style={styles.eventMeta}>{item.eventCode}</Text>
 
                 {item.startTime && (
                   <Text style={styles.eventMeta}>
@@ -97,19 +92,13 @@ export default function HistoryScreen() {
                 )}
 
                 {item.attendees.length === 0 ? (
-                  <Text style={styles.attendeeEmpty}>
-                    No attendees yet.
-                  </Text>
+                  <Text style={styles.attendeeEmpty}>No attendees yet.</Text>
                 ) : (
                   <View style={styles.attendeeList}>
                     {item.attendees.map((attendee) => (
-                      <View
-                        key={attendee.studentId}
-                        style={styles.attendeeRow}
-                      >
+                      <View key={attendee.studentId} style={styles.attendeeRow}>
                         <Text style={styles.attendeeName}>
-                          {attendee.studentName ||
-                            shortId(attendee.studentId)}
+                          {attendee.studentName || shortId(attendee.studentId)}
                         </Text>
 
                         <Text style={styles.eventMeta}>
@@ -142,17 +131,11 @@ export default function HistoryScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
             <View style={styles.card}>
-              <Text style={styles.eventTitle}>
-                {item.eventTitle}
-              </Text>
+              <Text style={styles.eventTitle}>{item.eventTitle}</Text>
 
-              <Text style={styles.eventMeta}>
-                {item.eventId}
-              </Text>
+              <Text style={styles.eventMeta}>{item.eventId}</Text>
 
-              <Text style={styles.eventMeta}>
-                {formatDate(item.scannedAt)}
-              </Text>
+              <Text style={styles.eventMeta}>{formatDate(item.scannedAt)}</Text>
             </View>
           )}
         />
@@ -166,7 +149,7 @@ function formatDate(iso: string) {
 }
 
 function shortId(id: string) {
-  return id ? `…${id.slice(-8)}` : 'unknown';
+  return id ? `…${id.slice(-8)}` : "unknown";
 }
 
 const styles = StyleSheet.create({
@@ -178,14 +161,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
     marginBottom: 16,
   },
   subtitle: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 20,
     marginTop: 32,
   },
@@ -204,13 +187,13 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   eventHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   eventTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
     marginBottom: 4,
     flex: 1,
@@ -229,7 +212,7 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.primary,
   },
   attendeeList: {
@@ -242,7 +225,7 @@ const styles = StyleSheet.create({
   },
   attendeeName: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
   },
   attendeeEmpty: {

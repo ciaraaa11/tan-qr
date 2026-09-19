@@ -1,12 +1,12 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { COLORS } from '@/constants/colors';
+import { COLORS } from "@/constants/colors";
 
 type Props = {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
-  theme?: 'primary';
+  theme?: "primary";
   onPress: () => void;
   disabled?: boolean;
 };
@@ -18,7 +18,7 @@ export default function AppButton({
   onPress,
   disabled = false,
 }: Props) {
-  if (theme === 'primary') {
+  if (theme === "primary") {
     return (
       <View
         style={[
@@ -38,7 +38,12 @@ export default function AppButton({
             color={COLORS.textOnPrimary}
             style={styles.icon}
           />
-          <Text style={[styles.label, { color: COLORS.textOnPrimary, fontWeight: '700'}]}>
+          <Text
+            style={[
+              styles.label,
+              { color: COLORS.textOnPrimary, fontWeight: "700" },
+            ]}
+          >
             {title}
           </Text>
         </Pressable>
@@ -67,16 +72,16 @@ export default function AppButton({
 
 const styles = StyleSheet.create({
   buttonOuter: {
-    width: '100%',
+    width: "100%",
     marginBottom: 14,
   },
   buttonInner: {
     borderRadius: 10,
     paddingVertical: 16,
     paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
   },
   secondaryFill: {
     backgroundColor: COLORS.card,
@@ -91,7 +96,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
   },
 });
