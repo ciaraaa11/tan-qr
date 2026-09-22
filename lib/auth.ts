@@ -67,16 +67,35 @@ export async function signUp(
     password,
   });
 
-  if (!error && data.session && profile) {
-    // The Phase 3 trigger creates the profile row on signup.
-    // Fill in the full_name and role the student chose.
-    await supabase
-      .from('profiles')
-      .update({
-        full_name: profile.full_name,
-        role: profile.role,
-      })
-      .eq('id', data.session.user.id);
+  if (!error && data.user && profile) {
+    // The Phase 3 trigger creates the profile row on signup with a
+    // default role of 'student'. Use the set_profile() SECURITY
+    // DEFINER function so the chosen role is saved even when email
+    // confirmation (no session yet) hasn't completed and RLS would
+    // otherwise block the write.
+    const { error: roleError } = await supabase.rpc("set_profile", {
+      uid: data.user.id,
+      user_email: data.user.email ?? "",
+      user_full_name: profile.full_name,
+      user_role: profile.role,
+    });
+
+    // Fallback for projects that haven't applied the migration yet:
+    // the upsert works when a session already exists (no email
+    // confirmation required).
+    if (roleError) {
+      await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: data.user.id,
+            email: data.user.email ?? "",
+            full_name: profile.full_name,
+            role: profile.role,
+          },
+          { onConflict: "id" }
+        );
+    }
   }
 
   if (!error && data.session) {

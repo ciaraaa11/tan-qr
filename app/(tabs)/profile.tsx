@@ -12,7 +12,12 @@ import { useFocusEffect } from "expo-router";
 import AppButton from "@/components/AppButton";
 import { COLORS } from "@/constants/colors";
 import { useAuth, signOut } from "@/lib/auth";
-import { getProfile, updateProfile, type Profile } from "@/lib/profile";
+import {
+  getProfile,
+  updateProfile,
+  type Profile,
+  type Role,
+} from "@/lib/profile";
 
 export default function ProfileScreen() {
   const { user } = useAuth();
@@ -41,7 +46,7 @@ export default function ProfileScreen() {
 
     setSaving(true);
 
-    const { error } = await updateProfile(user.id, {
+    const { error } = await updateProfile(user.id, user.email ?? "", {
       full_name: draftName.trim(),
     });
 
@@ -75,6 +80,23 @@ export default function ProfileScreen() {
     }
   };
 
+  const changeRole = async (role: Role) => {
+    if (!user) return;
+
+    setSaving(true);
+
+    const { error } = await updateProfile(user.id, user.email ?? "", { role });
+
+    setSaving(false);
+
+    if (error) {
+      Alert.alert("Error", error);
+      return;
+    }
+
+    setProfile((prev) => (prev ? { ...prev, role } : prev));
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>My Profile</Text>
@@ -89,6 +111,36 @@ export default function ProfileScreen() {
             <View style={[styles.roleBadge, styles.roleBadgeStudent]}>
               <Text style={styles.roleBadgeText}>Student</Text>
             </View>
+          )}
+
+          <Text style={styles.label}>Account Type</Text>
+
+          <View style={styles.roleRow}>
+            {(["student", "teacher"] as const).map((roleOption) => {
+              const active = (profile?.role ?? "student") === roleOption;
+
+              return (
+                <Pressable
+                  key={roleOption}
+                  style={[styles.roleChip, active && styles.roleChipActive]}
+                  onPress={() => changeRole(roleOption)}
+                  disabled={saving}
+                >
+                  <Text
+                    style={[
+                      styles.roleChipText,
+                      active && styles.roleChipTextActive,
+                    ]}
+                  >
+                    {roleOption === "teacher" ? "Teacher" : "Student"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {saving && (
+            <Text style={styles.roleSaving}>Saving account type...</Text>
           )}
 
           <Text style={styles.label}>Name</Text>
@@ -178,6 +230,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: COLORS.textOnPrimary,
+  },
+  roleRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 6,
+  },
+  roleChip: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  roleChipActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + "14",
+  },
+  roleChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+  roleChipTextActive: {
+    color: COLORS.primary,
+    fontWeight: "700",
+  },
+  roleSaving: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
   },
   label: {
     fontSize: 12,

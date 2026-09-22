@@ -44,81 +44,87 @@ export default function LoginScreen() {
     }
   };
 
+  const renderForm = () => (
+    <ScrollView
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.headerContainer}>
+        <Header title="QR Attendance" />
+      </View>
+
+      <Text style={styles.title}>Welcome Back</Text>
+
+      <Text style={styles.subtitle}>Sign in to record your attendance</Text>
+
+      <View style={styles.form}>
+        <Text style={styles.label}>Email</Text>
+
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="your.email@school.edu"
+          placeholderTextColor={COLORS.textSecondary}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          editable={!loading}
+        />
+
+        <Text style={styles.label}>Password</Text>
+
+        <TextInput
+          style={styles.input}
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Enter your password"
+          placeholderTextColor={COLORS.textSecondary}
+          secureTextEntry
+          editable={!loading}
+        />
+
+        {error && <Text style={styles.error}>{error}</Text>}
+
+        <View style={styles.signInContainer}>
+          {loading ? (
+            <ActivityIndicator
+              size="large"
+              color={COLORS.primary}
+              style={styles.loader}
+            />
+          ) : (
+            <AppButton
+              theme="primary"
+              title="Sign In"
+              icon="log-in-outline"
+              onPress={handleLogin}
+            />
+          )}
+        </View>
+      </View>
+
+      <Link href="/register" style={styles.link}>
+        Don't have an account? Sign Up
+      </Link>
+    </ScrollView>
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headerContainer}>
-              <Header title="QR Attendance" />
-            </View>
-
-            <Text style={styles.title}>Welcome Back</Text>
-
-            <Text style={styles.subtitle}>
-              Sign in to record your attendance
-            </Text>
-
-            <View style={styles.form}>
-              <Text style={styles.label}>Email</Text>
-
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="your.email@school.edu"
-                placeholderTextColor={COLORS.textSecondary}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                editable={!loading}
-              />
-
-              <Text style={styles.label}>Password</Text>
-
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                placeholderTextColor={COLORS.textSecondary}
-                secureTextEntry
-                editable={!loading}
-              />
-
-              {error && <Text style={styles.error}>{error}</Text>}
-
-              <View style={styles.signInContainer}>
-                {loading ? (
-                  <ActivityIndicator
-                    size="large"
-                    color={COLORS.primary}
-                    style={styles.loader}
-                  />
-                ) : (
-                  <AppButton
-                    theme="primary"
-                    title="Sign In"
-                    icon="log-in-outline"
-                    onPress={handleLogin}
-                  />
-                )}
-              </View>
-            </View>
-
-            <Link href="/register" style={styles.link}>
-              Don't have an account? Sign Up
-            </Link>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+      {Platform.OS === "web" ? (
+        <View style={styles.keyboardView}>{renderForm()}</View>
+      ) : (
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            {renderForm()}
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 }
