@@ -25,19 +25,12 @@ export async function getProfile(userId: string): Promise<Profile | null> {
 
 export async function updateProfile(
   userId: string,
-  email: string,
   updates: { full_name?: string; role?: Role }
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from('profiles')
-    .upsert(
-      {
-        id: userId,
-        email,
-        ...updates,
-      },
-      { onConflict: 'id' }
-    );
+    .update(updates)
+    .eq('id', userId);
 
   return { error: error?.message ?? null };
 }
