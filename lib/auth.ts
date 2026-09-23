@@ -1,6 +1,7 @@
-import { useSyncExternalStore } from 'react';
-import { supabase } from './supabase';
-import type { Session, User } from '@supabase/supabase-js';
+import { useEffect, useSyncExternalStore } from "react";
+import type { Session, User } from "@supabase/supabase-js";
+
+import { supabase } from "./supabase";
 
 type AuthState = {
   session: Session | null;
@@ -10,38 +11,21 @@ type AuthState = {
 
 export type SignUpProfile = {
   full_name: string;
-  role: 'student' | 'teacher';
+  role: "student" | "teacher";
 };
 
 let globalSession: Session | null = null;
 let globalUser: User | null = null;
 let globalLoading = true;
-
-// Bumped on every auth change so useSyncExternalStore re-renders even when
-// the session value is unchanged (e.g. null -> null after getSession()).
 let globalVersion = 0;
 
-let listeners: Set<() => void> = new Set();
+const listeners = new Set<() => void>();
+
 let started = false;
+let startupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function notify() {
   listeners.forEach((listener) => listener());
-}
-
-// Restore the persisted session once, before the first screen renders.
-// Without this the app would always land on the login screen ("logs out").
-function ensureAuthStarted() {
-  if (started) return;
-  started = true;
-
-  supabase.auth
-    .getSession()
-    .then(({ data }) => setAuth(data.session))
-    .catch(() => setAuth(null));
-
-  supabase.auth.onAuthStateChange((_event, session) => {
-    setAuth(session);
-  });
 }
 
 function subscribe(listener: () => void) {
@@ -62,13 +46,57 @@ export function setAuth(session: Session | null) {
   globalLoading = false;
   globalVersion += 1;
 
+  if (startupTimeout) {
+    clearTimeout(startupTimeout);
+    startupTimeout = null;
+  }
+
   notify();
+}
+
+function ensureAuthStarted() {
+  if (started) return;
+  started = true;
+
+  // Do not allow startup to remain on the loading screen forever.
+  // If session restoration is unusually slow, show the logged-out flow.
+  // A later Supabase auth event can still update the session normally.
+  startupTimeout = setTimeout(() => {
+    if (globalLoading) {
+      console.warn(
+        "Auth session restore timed out; continuing without a session.",
+      );
+      setAuth(null);
+    }
+  }, 5000);
+
+  supabase.auth
+    .getSession()
+    .then(({ data, error }) => {
+      if (error) {
+        console.error("Failed to restore auth session:", error);
+        setAuth(null);
+        return;
+      }
+
+      setAuth(data.session);
+    })
+    .catch((error) => {
+      console.error("Failed to restore auth session:", error);
+      setAuth(null);
+    });
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    setAuth(session);
+  });
 }
 
 export function useAuth(): AuthState {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  ensureAuthStarted();
+  useEffect(() => {
+    ensureAuthStarted();
+  }, []);
 
   return {
     session: globalSession,
@@ -80,7 +108,7 @@ export function useAuth(): AuthState {
 export async function signUp(
   email: string,
   password: string,
-  profile?: SignUpProfile
+  profile?: SignUpProfile,
 ) {
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -89,10 +117,9 @@ export async function signUp(
 
   if (!error && data.user && profile) {
     // The Phase 3 trigger creates the profile row on signup with a
-    // default role of 'student'. Use the set_profile() SECURITY
+    // default role of "student". Use the set_profile() SECURITY
     // DEFINER function so the chosen role is saved even when email
-    // confirmation (no session yet) hasn't completed and RLS would
-    // otherwise block the write.
+    // confirmation is required and there is no session yet.
     const { error: roleError } = await supabase.rpc("set_profile", {
       uid: data.user.id,
       user_email: data.user.email ?? "",
@@ -100,21 +127,17 @@ export async function signUp(
       user_role: profile.role,
     });
 
-    // Fallback for projects that haven't applied the migration yet:
-    // the upsert works when a session already exists (no email
-    // confirmation required).
+    // Fallback for projects that have not applied the migration yet.
     if (roleError) {
-      await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: data.user.id,
-            email: data.user.email ?? "",
-            full_name: profile.full_name,
-            role: profile.role,
-          },
-          { onConflict: "id" }
-        );
+      await supabase.from("profiles").upsert(
+        {
+          id: data.user.id,
+          email: data.user.email ?? "",
+          full_name: profile.full_name,
+          role: profile.role,
+        },
+        { onConflict: "id" },
+      );
     }
   }
 
@@ -125,15 +148,11 @@ export async function signUp(
   return { data, error };
 }
 
-export async function signIn(
-  email: string,
-  password: string
-) {
-  const { data, error } =
-    await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+export async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (!error && data.session) {
     setAuth(data.session);
