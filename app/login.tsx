@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import {
   StyleSheet,
   Text,
@@ -11,7 +12,8 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
-import { Link } from "expo-router";
+
+import { Link, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppButton from "@/components/AppButton";
@@ -24,6 +26,7 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -32,10 +35,22 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const { error: authError } = await signIn(email.trim(), password);
+      const cleanEmail = email.trim();
+
+      const { data, error: authError } = await signIn(
+        cleanEmail,
+        password
+      );
 
       if (authError) {
         setError(authError.message);
+        return;
+      }
+
+      if (data.session) {
+        router.replace("/(tabs)");
+      } else {
+        setError("Unable to sign in. No session was created.");
       }
     } catch (err: any) {
       setError(err?.message || "Unexpected error");
@@ -56,7 +71,9 @@ export default function LoginScreen() {
 
       <Text style={styles.title}>Welcome Back</Text>
 
-      <Text style={styles.subtitle}>Sign in to record your attendance</Text>
+      <Text style={styles.subtitle}>
+        Sign in to record your attendance
+      </Text>
 
       <View style={styles.form}>
         <Text style={styles.label}>Email</Text>
@@ -84,7 +101,11 @@ export default function LoginScreen() {
           editable={!loading}
         />
 
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error && (
+          <Text style={styles.error}>
+            {error}
+          </Text>
+        )}
 
         <View style={styles.signInContainer}>
           {loading ? (
@@ -104,23 +125,43 @@ export default function LoginScreen() {
         </View>
       </View>
 
-      <Link href="/register" style={styles.link}>
+      <Link
+        href="/register"
+        style={styles.link}
+      >
         Don't have an account? Sign Up
       </Link>
     </ScrollView>
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.container,
+        { paddingTop: insets.top },
+      ]}
+    >
       {Platform.OS === "web" ? (
-        <View style={styles.keyboardView}>{renderForm()}</View>
+        <View style={styles.keyboardView}>
+          {renderForm()}
+        </View>
       ) : (
         <KeyboardAvoidingView
           style={styles.keyboardView}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          behavior={
+            Platform.OS === "ios"
+              ? "padding"
+              : "height"
+          }
+          keyboardVerticalOffset={
+            Platform.OS === "ios"
+              ? 0
+              : 20
+          }
         >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <TouchableWithoutFeedback
+            onPress={Keyboard.dismiss}
+          >
             {renderForm()}
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
@@ -134,34 +175,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
   keyboardView: {
     flex: 1,
   },
+
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
+
   headerContainer: {
     alignItems: "center",
     marginTop: 20,
     marginBottom: 16,
   },
+
   title: {
     fontSize: 28,
     fontWeight: "700",
     color: COLORS.textPrimary,
     marginBottom: 4,
   },
+
   subtitle: {
     fontSize: 15,
     color: COLORS.textSecondary,
     lineHeight: 21,
     marginBottom: 32,
   },
+
   form: {
     marginBottom: 24,
   },
+
   label: {
     fontSize: 14,
     fontWeight: "600",
@@ -169,6 +217,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginTop: 10,
   },
+
   input: {
     backgroundColor: COLORS.card,
     borderRadius: 10,
@@ -179,9 +228,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textPrimary,
   },
+
   signInContainer: {
     marginTop: 16,
   },
+
   error: {
     fontSize: 14,
     color: COLORS.danger,
@@ -189,9 +240,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 4,
   },
+
   loader: {
     marginVertical: 16,
   },
+
   link: {
     fontSize: 14,
     color: COLORS.primary,

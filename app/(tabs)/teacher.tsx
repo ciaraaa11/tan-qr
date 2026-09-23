@@ -1,3 +1,4 @@
+import "@/lib/database";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import DateTimePicker, {
   type DateTimePickerEvent,
