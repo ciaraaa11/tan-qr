@@ -56,12 +56,14 @@ export function setAuth(session: Session | null) {
 
 function ensureAuthStarted() {
   if (started) return;
+
+  console.log("AUTH: ensureAuthStarted called");
+
   started = true;
 
-  // Do not allow startup to remain on the loading screen forever.
-  // If session restoration is unusually slow, show the logged-out flow.
-  // A later Supabase auth event can still update the session normally.
   startupTimeout = setTimeout(() => {
+    console.log("AUTH: 5 second timeout reached");
+
     if (globalLoading) {
       console.warn(
         "Auth session restore timed out; continuing without a session.",
@@ -70,9 +72,15 @@ function ensureAuthStarted() {
     }
   }, 5000);
 
+  console.log("AUTH: calling getSession");
+
   supabase.auth
     .getSession()
     .then(({ data, error }) => {
+      console.log("AUTH: getSession finished");
+      console.log("AUTH: has session:", !!data.session);
+      console.log("AUTH: error:", error?.message ?? "none");
+
       if (error) {
         console.error("Failed to restore auth session:", error);
         setAuth(null);
@@ -82,11 +90,12 @@ function ensureAuthStarted() {
       setAuth(data.session);
     })
     .catch((error) => {
-      console.error("Failed to restore auth session:", error);
+      console.error("AUTH: getSession catch:", error);
       setAuth(null);
     });
 
   supabase.auth.onAuthStateChange((_event, session) => {
+    console.log("AUTH EVENT:", _event, "HAS SESSION:", !!session);
     setAuth(session);
   });
 }

@@ -1,39 +1,23 @@
-import { Stack } from "expo-router";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { Redirect, Stack } from "expo-router";
 
-import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
 
 export default function RootLayout() {
-  const { session, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
+  const { session } = useAuth();
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={!session}>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="login" />
         <Stack.Screen name="register" />
-      </Stack.Protected>
-
-      <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
-      </Stack.Protected>
-    </Stack>
+      </Stack>
+
+      {session ? (
+        <Redirect href="/(tabs)" />
+      ) : (
+        <Redirect href="/login" />
+      )}
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.background,
-  },
-});
