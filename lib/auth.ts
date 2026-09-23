@@ -15,12 +15,33 @@ export type SignUpProfile = {
 
 let globalSession: Session | null = null;
 let globalUser: User | null = null;
-let globalLoading = false;
+let globalLoading = true;
+
+// Bumped on every auth change so useSyncExternalStore re-renders even when
+// the session value is unchanged (e.g. null -> null after getSession()).
+let globalVersion = 0;
 
 let listeners: Set<() => void> = new Set();
+let started = false;
 
 function notify() {
   listeners.forEach((listener) => listener());
+}
+
+// Restore the persisted session once, before the first screen renders.
+// Without this the app would always land on the login screen ("logs out").
+function ensureAuthStarted() {
+  if (started) return;
+  started = true;
+
+  supabase.auth
+    .getSession()
+    .then(({ data }) => setAuth(data.session))
+    .catch(() => setAuth(null));
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    setAuth(session);
+  });
 }
 
 function subscribe(listener: () => void) {
@@ -32,27 +53,26 @@ function subscribe(listener: () => void) {
 }
 
 function getSnapshot() {
-  return globalSession;
+  return globalVersion;
 }
 
 export function setAuth(session: Session | null) {
   globalSession = session;
   globalUser = session?.user ?? null;
   globalLoading = false;
+  globalVersion += 1;
 
   notify();
 }
 
 export function useAuth(): AuthState {
-  const session = useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    getSnapshot
-  );
+  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  ensureAuthStarted();
 
   return {
-    session,
-    user: session?.user ?? globalUser,
+    session: globalSession,
+    user: globalSession?.user ?? globalUser,
     loading: globalLoading,
   };
 }
