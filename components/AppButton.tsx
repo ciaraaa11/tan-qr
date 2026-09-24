@@ -1,36 +1,28 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { COLORS } from "@/constants/colors";
+import { COLORS } from '@/constants/colors';
 
 type Props = {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
-  theme?: "primary";
+  theme?: 'primary';
   onPress: () => void;
   disabled?: boolean;
 };
 
-export default function AppButton({
-  title,
-  icon,
-  theme,
-  onPress,
-  disabled = false,
-}: Props) {
-  if (theme === "primary") {
+export default function AppButton({ title, icon, theme, onPress }: Props) {
+  if (theme === 'primary') {
     return (
       <View
         style={[
           styles.buttonOuter,
-          { borderWidth: 1, borderColor: COLORS.primary, borderRadius: 10 },
-          disabled && styles.disabled,
+          { borderWidth: 3, borderColor: COLORS.primary, borderRadius: 18 },
         ]}
       >
         <Pressable
           style={[styles.buttonInner, { backgroundColor: COLORS.primary }]}
           onPress={onPress}
-          disabled={disabled}
         >
           <Ionicons
             name={icon}
@@ -38,12 +30,7 @@ export default function AppButton({
             color={COLORS.textOnPrimary}
             style={styles.icon}
           />
-          <Text
-            style={[
-              styles.label,
-              { color: COLORS.textOnPrimary, fontWeight: "700" },
-            ]}
-          >
+          <Text style={[styles.label, { color: COLORS.textOnPrimary }]}>
             {title}
           </Text>
         </Pressable>
@@ -52,12 +39,8 @@ export default function AppButton({
   }
 
   return (
-    <View style={[styles.buttonOuter, disabled && styles.disabled]}>
-      <Pressable
-        style={[styles.buttonInner, styles.secondaryFill]}
-        onPress={onPress}
-        disabled={disabled}
-      >
+    <View style={styles.buttonOuter}>
+      <Pressable style={styles.buttonInner} onPress={onPress}>
         <Ionicons
           name={icon}
           size={22}
@@ -72,31 +55,23 @@ export default function AppButton({
 
 const styles = StyleSheet.create({
   buttonOuter: {
-    width: "100%",
+    width: '100%',
     marginBottom: 14,
   },
   buttonInner: {
-    borderRadius: 10,
+    borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-  },
-  secondaryFill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
     backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  disabled: {
-    opacity: 0.55,
-  },
-  icon: {
-    paddingRight: 10,
-  },
-  label: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: COLORS.textPrimary,
-  },
+  icon: { paddingRight: 10 },
+  label: { fontSize: 17, fontWeight: '600', color: COLORS.textPrimary },
 });

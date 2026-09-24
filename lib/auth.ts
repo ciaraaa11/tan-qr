@@ -1,7 +1,6 @@
-import { useEffect, useSyncExternalStore } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-
-import { supabase } from "./supabase";
+import { useState, useEffect } from 'react';
+import { supabase } from './supabase';
+import type { Session, User } from '@supabase/supabase-js';
 
 type AuthState = {
   session: Session | null;
@@ -9,171 +8,74 @@ type AuthState = {
   loading: boolean;
 };
 
-export type SignUpProfile = {
-  full_name: string;
-  role: "student" | "teacher";
-};
-
 let globalSession: Session | null = null;
 let globalUser: User | null = null;
-let globalLoading = true;
-let globalVersion = 0;
-
-const listeners = new Set<() => void>();
-
-let started = false;
-let startupTimeout: ReturnType<typeof setTimeout> | null = null;
+let globalLoading = false;
+let listeners: Set<() => void> = new Set();
 
 function notify() {
-  listeners.forEach((listener) => listener());
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function getSnapshot() {
-  return globalVersion;
+  listeners.forEach((l) => l());
 }
 
 export function setAuth(session: Session | null) {
   globalSession = session;
   globalUser = session?.user ?? null;
   globalLoading = false;
-  globalVersion += 1;
-
-  if (startupTimeout) {
-    clearTimeout(startupTimeout);
-    startupTimeout = null;
-  }
-
   notify();
 }
 
-function ensureAuthStarted() {
-  if (started) return;
-
-  console.log("AUTH: ensureAuthStarted called");
-
-  started = true;
-
-  startupTimeout = setTimeout(() => {
-    console.log("AUTH: 5 second timeout reached");
-
-    if (globalLoading) {
-      console.warn(
-        "Auth session restore timed out; continuing without a session.",
-      );
-      setAuth(null);
-    }
-  }, 5000);
-
-  console.log("AUTH: calling getSession");
-
-  supabase.auth
-    .getSession()
-    .then(({ data, error }) => {
-      console.log("AUTH: getSession finished");
-      console.log("AUTH: has session:", !!data.session);
-      console.log("AUTH: error:", error?.message ?? "none");
-
-      if (error) {
-        console.error("Failed to restore auth session:", error);
-        setAuth(null);
-        return;
-      }
-
-      setAuth(data.session);
-    })
-    .catch((error) => {
-      console.error("AUTH: getSession catch:", error);
-      setAuth(null);
-    });
-
-  supabase.auth.onAuthStateChange((_event, session) => {
-    console.log("AUTH EVENT:", _event, "HAS SESSION:", !!session);
-    setAuth(session);
-  });
-}
-
 export function useAuth(): AuthState {
-  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const [, forceRender] = useState(0);
 
   useEffect(() => {
-    ensureAuthStarted();
+    const listener = () => forceRender((n) => n + 1);
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
   }, []);
 
   return {
     session: globalSession,
-    user: globalSession?.user ?? globalUser,
+    user: globalUser,
     loading: globalLoading,
   };
 }
 
+export type SignUpProfile = {
+  full_name: string;
+  role: 'student' | 'teacher';
+};
+
 export async function signUp(
   email: string,
   password: string,
-  profile?: SignUpProfile,
+  profile?: SignUpProfile
 ) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-
-  if (!error && data.user && profile) {
-    // The Phase 3 trigger creates the profile row on signup with a
-    // default role of "student". Use the set_profile() SECURITY
-    // DEFINER function so the chosen role is saved even when email
-    // confirmation is required and there is no session yet.
-    const { error: roleError } = await supabase.rpc("set_profile", {
-      uid: data.user.id,
-      user_email: data.user.email ?? "",
-      user_full_name: profile.full_name,
-      user_role: profile.role,
-    });
-
-    // Fallback for projects that have not applied the migration yet.
-    if (roleError) {
-      await supabase.from("profiles").upsert(
-        {
-          id: data.user.id,
-          email: data.user.email ?? "",
-          full_name: profile.full_name,
-          role: profile.role,
-        },
-        { onConflict: "id" },
-      );
-    }
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (!error && data.session && profile) {
+    // The Phase 3 trigger creates the profile row on signup.
+    // Fill in the full_name and role the student chose.
+    await supabase
+      .from('profiles')
+      .update({ full_name: profile.full_name, role: profile.role })
+      .eq('id', data.session.user.id);
   }
-
   if (!error && data.session) {
     setAuth(data.session);
   }
-
   return { data, error };
 }
 
-export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
 
+export async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (!error && data.session) {
     setAuth(data.session);
   }
-
   return { data, error };
 }
 
 export async function signOut() {
   setAuth(null);
-
   supabase.auth.signOut().catch(() => {});
-
   return { error: null };
 }

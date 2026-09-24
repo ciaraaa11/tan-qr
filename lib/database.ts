@@ -1,5 +1,5 @@
-import { supabase } from "./supabase";
-import * as SQLite from "expo-sqlite";
+import { supabase } from './supabase';
+import * as SQLite from 'expo-sqlite';
 
 export type AttendanceRecord = {
   id: number;
@@ -16,8 +16,8 @@ export type Event = {
 };
 
 export type Student = {
-  studentId: string;
-  name: string;
+studentId: string;
+name: string;
 };
 
 type EventPayload = {
@@ -38,7 +38,7 @@ let db: SQLite.SQLiteDatabase | null = null;
 
 async function getDb() {
   if (!db) {
-    db = await SQLite.openDatabaseAsync("qr-attendance.db");
+    db = await SQLite.openDatabaseAsync('qr-attendance.db');
     await db.execAsync(`
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS events (
@@ -69,17 +69,17 @@ async function getDb() {
 
 export async function registerAttendance(
   rawPayload: string,
-  studentId: string,
+  studentId: string
 ): Promise<RegisterResult> {
   let payload: EventPayload;
   try {
     payload = JSON.parse(rawPayload);
   } catch {
-    return { success: false, message: "Invalid QR code." };
+    return { success: false, message: 'Invalid QR code.' };
   }
 
   if (payload.v !== 1 || !payload.event) {
-    return { success: false, message: "Not an attendance QR code." };
+    return { success: false, message: 'Not an attendance QR code.' };
   }
 
   const now = Date.now();
@@ -87,43 +87,43 @@ export async function registerAttendance(
   const end = payload.end ? new Date(payload.end).getTime() : null;
 
   if (start && now < start) {
-    return { success: false, message: "Event has not started yet." };
+    return { success: false, message: 'Event has not started yet.' };
   }
   if (end && now > end) {
-    return { success: false, message: "Event has already ended." };
+    return { success: false, message: 'Event has already ended.' };
   }
 
   const database = await getDb();
   const title = payload.title ?? payload.event;
 
   await database.runAsync(
-    "INSERT OR IGNORE INTO events (eventId, title, start, end) VALUES (?, ?, ?, ?)",
+    'INSERT OR IGNORE INTO events (eventId, title, start, end) VALUES (?, ?, ?, ?)',
     payload.event,
     title,
-    payload.start ?? "",
-    payload.end ?? "",
+    payload.start ?? '',
+    payload.end ?? ''
   );
 
   const result = await database.runAsync(
-    "INSERT OR IGNORE INTO attendance (studentId, eventId, scannedAt) VALUES (?, ?, ?)",
+    'INSERT OR IGNORE INTO attendance (studentId, eventId, scannedAt) VALUES (?, ?, ?)',
     studentId,
     payload.event,
-    new Date().toISOString(),
+    new Date().toISOString()
   );
 
   if (result.changes === 0) {
     return {
       success: false,
-      message: "Already registered for this event.",
+      message: 'Already registered for this event.',
       eventTitle: title,
     };
   }
 
-  return { success: true, message: "Attendance recorded!", eventTitle: title };
+  return { success: true, message: 'Attendance recorded!', eventTitle: title };
 }
 
 export async function getAttendanceHistory(
-  studentId: string,
+  studentId: string
 ): Promise<AttendanceRecord[]> {
   const database = await getDb();
   const rows = await database.getAllAsync<AttendanceRecord>(
@@ -132,7 +132,7 @@ export async function getAttendanceHistory(
      JOIN events e ON e.eventId = a.eventId
      WHERE a.studentId = ?
      ORDER BY a.scannedAt DESC`,
-    studentId,
+    studentId
   );
   return rows;
 }
@@ -140,18 +140,18 @@ export async function getAttendanceHistory(
 export async function createEvent(event: Event): Promise<void> {
   const database = await getDb();
   await database.runAsync(
-    "INSERT OR REPLACE INTO events (eventId, title, start, end) VALUES (?, ?, ?, ?)",
+    'INSERT OR REPLACE INTO events (eventId, title, start, end) VALUES (?, ?, ?, ?)',
     event.eventId,
     event.title,
     event.start,
-    event.end,
+    event.end
   );
 }
 
 export async function getCurrentStudentId(): Promise<string | null> {
   const database = await getDb();
   const row = await database.getFirstAsync<{ studentId: string }>(
-    "SELECT studentId FROM session WHERE id = 1",
+    'SELECT studentId FROM session WHERE id = 1'
   );
   return row?.studentId ?? null;
 }
@@ -159,20 +159,20 @@ export async function getCurrentStudentId(): Promise<string | null> {
 export async function setCurrentStudent(studentId: string): Promise<void> {
   const database = await getDb();
   await database.runAsync(
-    "INSERT OR REPLACE INTO session (id, studentId) VALUES (1, ?)",
-    studentId,
+    'INSERT OR REPLACE INTO session (id, studentId) VALUES (1, ?)',
+  studentId
   );
 }
 
 export async function clearSession(): Promise<void> {
   const database = await getDb();
-  await database.runAsync("DELETE FROM session WHERE id = 1");
+  await database.runAsync('DELETE FROM session WHERE id = 1');
 }
 
 export async function getAllStudents(): Promise<Student[]> {
   const database = await getDb();
   return database.getAllAsync<Student>(
-    "SELECT studentId, name FROM students ORDER BY name",
+    'SELECT studentId, name FROM students ORDER BY name'
   );
 }
 
@@ -180,8 +180,8 @@ export async function getStudent(studentId: string): Promise<Student | null> {
   const database = await getDb();
   return (
     (await database.getFirstAsync<Student>(
-      "SELECT studentId, name FROM students WHERE studentId = ?",
-      studentId,
+      'SELECT studentId, name FROM students WHERE studentId = ?',
+      studentId
     )) ?? null
   );
 }
@@ -189,37 +189,37 @@ export async function getStudent(studentId: string): Promise<Student | null> {
 export async function createStudent(name: string): Promise<Student> {
   const database = await getDb();
   const countRow = await database.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM students",
+    'SELECT COUNT(*) AS c FROM students'
   );
   const next = (countRow?.c ?? 0) + 1;
-  const studentId = `STUDENT-2026-${String(next).padStart(3, "0")}`;
+  const studentId = `STUDENT-2026-${String(next).padStart(3, '0')}`;
   const trimmedName = name.trim();
 
   await database.runAsync(
-    "INSERT OR IGNORE INTO students (studentId, name) VALUES (?, ?)",
+    'INSERT OR IGNORE INTO students (studentId, name) VALUES (?, ?)',
     studentId,
-    trimmedName,
+    trimmedName
   );
   return { studentId, name: trimmedName };
 }
 
 export async function updateStudentName(
   studentId: string,
-  name: string,
+  name: string
 ): Promise<void> {
   const database = await getDb();
   await database.runAsync(
-    "UPDATE students SET name = ? WHERE studentId = ?",
+    'UPDATE students SET name = ? WHERE studentId = ?',
     name.trim(),
-    studentId,
+    studentId
   );
 }
 
 export async function getAttendanceCount(studentId: string): Promise<number> {
   const database = await getDb();
   const row = await database.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM attendance WHERE studentId = ?",
-    studentId,
+    'SELECT COUNT(*) AS c FROM attendance WHERE studentId = ?',
+    studentId
   );
   return row?.c ?? 0;
 }
