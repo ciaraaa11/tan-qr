@@ -20,7 +20,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.ciaraaa11.QRATT"
+      "package": "com.ciaraaa11.QRATT",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static",
@@ -51,6 +57,12 @@
         "projectId": "d0944adb-9289-4802-bd61-389d47d14dc5"
       }
     },
-    "owner": "ciaraaa11"
+    "owner": "ciaraaa11",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d0944adb-9289-4802-bd61-389d47d14dc5"
+    }
   }
 }
