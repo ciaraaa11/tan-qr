@@ -10,7 +10,7 @@ import {
   type ChangeEvent,
   type CSSProperties,
 } from "react";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   Alert,
   Platform,
@@ -24,6 +24,8 @@ import {
 import QRCode from "react-native-qrcode-svg";
 
 import AppButton from "@/components/AppButton";
+import AcademicSelect from "@/components/AcademicSelect";
+import { PROGRAMS, YEAR_LEVELS, BLOCKS } from "@/constants/academic";
 import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
 import {
@@ -32,15 +34,50 @@ import {
   getEventsByTeacher,
   updateEvent,
   type CloudEvent,
+  type LateMode,
 } from "@/lib/events";
 import { getProfile, type Role } from "@/lib/profile";
+import { supabase } from "@/lib/supabase";
+import {
+  getAttendanceStatus,
+  type AttendanceStatus,
+} from "@/lib/attendanceStatus";
+
+type StudentEntry = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  program: string | null;
+  year_level: string | null;
+  block: string | null;
+};
+
+type ScanEntry = {
+  student_id: string;
+  scanned_at: string;
+};
+
+type StudentAttendanceEntry = {
+  student: StudentEntry;
+  scannedAt: string | null;
+  status: AttendanceStatus;
+};
+
+type StatusFilter = "present" | "late" | "absent" | "pending";
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "present", label: "Present" },
+  { key: "late", label: "Late" },
+  { key: "absent", label: "Absent" },
+  { key: "pending", label: "Pending" },
+];
 
 function toLocalISO(date: Date) {
+  return date.toISOString(); // Store the exact instant in UTC for Supabase.
+}
+
+function toDateTimeLocalValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`
-  );
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatDateTime(date: Date) {
@@ -52,32 +89,26 @@ function formatDateTime(date: Date) {
   )}:${pad(date.getMinutes())}`;
 }
 
-function parseTypedDateTime(dateText: string, timeText: string) {
-  const dateMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(dateText.trim());
-  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(timeText.trim());
+const GRACE_PERIODS = [0, 5, 10, 15, 20, 30, 60];
 
-  if (!dateMatch || !timeMatch) return null;
+// Keep exact cutoff as a local clock time. The attendance calculation
+// will need to use the event date and the same local timezone.
+function resolveExactCutoff(start: Date, end: Date, text: string): Date | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(text.trim());
+  if (!match) return null;
 
-  const year = Number(dateMatch[1]);
-  const month = Number(dateMatch[2]) - 1;
-  const day = Number(dateMatch[3]);
-  const hours = Number(timeMatch[1]);
-  const minutes = Number(timeMatch[2]);
+  const cutoff = new Date(start);
+  cutoff.setHours(Number(match[1]), Number(match[2]), 0, 0);
 
-  if (month < 0 || month > 11 || day < 1 || day > 31) return null;
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-
-  const date = new Date(year, month, day, hours, minutes, 0, 0);
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month ||
-    date.getDate() !== day
-  ) {
-    return null;
+  // An event that runs across midnight may have its cutoff on the next day.
+  if (cutoff.getTime() < start.getTime() && end.getDate() !== start.getDate()) {
+    cutoff.setDate(cutoff.getDate() + 1);
   }
 
-  return date;
+  return cutoff.getTime() >= start.getTime() &&
+    cutoff.getTime() <= end.getTime()
+    ? cutoff
+    : null;
 }
 
 const QUICK_END_OPTIONS = [
@@ -90,28 +121,41 @@ type EditTarget = "start" | "end";
 
 export default function TeacherScreen() {
   const { user } = useAuth();
+  const router = useRouter();
 
   const [role, setRole] = useState<Role | null>(null);
   const [roleLoading, setRoleLoading] = useState(true);
 
   const [title, setTitle] = useState("");
   const [eventId, setEventId] = useState("");
+  const [attendancePurpose, setAttendancePurpose] = useState("");
+  const [program, setProgram] = useState("");
+  const [yearLevel, setYearLevel] = useState("");
+  const [block, setBlock] = useState("");
+  const [lateMode, setLateMode] = useState<LateMode>("minutes");
+  const [lateMinutes, setLateMinutes] = useState(15);
+  const [lateCutoffTime, setLateCutoffTime] = useState("08:15");
   const [startDate, setStartDate] = useState(() => new Date());
   const [endDate, setEndDate] = useState(
     () => new Date(Date.now() + 60 * 60 * 1000),
   );
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editingPart, setEditingPart] = useState<"date" | "time">("date");
-  const [payload, setPayload] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [existingEvents, setExistingEvents] = useState<CloudEvent[]>([]);
   const [existingLoading, setExistingLoading] = useState(true);
 
-  const [startDateText, setStartDateText] = useState("");
-  const [startTimeText, setStartTimeText] = useState("");
-  const [endDateText, setEndDateText] = useState("");
-  const [endTimeText, setEndTimeText] = useState("");
   const [editingEvent, setEditingEvent] = useState<CloudEvent | null>(null);
+  const [attendanceEventId, setAttendanceEventId] = useState<string | null>(
+    null,
+  );
+  const [attendanceRows, setAttendanceRows] = useState<
+    StudentAttendanceEntry[]
+  >([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("present");
 
   useFocusEffect(
     useCallback(() => {
@@ -167,13 +211,15 @@ export default function TeacherScreen() {
     const current = editTarget === "start" ? startDate : endDate;
     const next = new Date(current);
 
-    next.setFullYear(
-      selected.getFullYear(),
-      selected.getMonth(),
-      selected.getDate(),
-    );
-
-    next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+    if (editingPart === "date") {
+      next.setFullYear(
+        selected.getFullYear(),
+        selected.getMonth(),
+        selected.getDate(),
+      );
+    } else {
+      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+    }
 
     if (editTarget === "start") {
       setStartDate(next);
@@ -200,6 +246,13 @@ export default function TeacherScreen() {
       title: title.trim(),
       start: toLocalISO(startDate),
       end: toLocalISO(endDate),
+      attendance_purpose: attendancePurpose.trim(),
+      program,
+      year_level: yearLevel,
+      block,
+      late_mode: lateMode,
+      late_minutes: lateMode === "minutes" ? lateMinutes : null,
+      late_cutoff_time: lateMode === "exact" ? lateCutoffTime.trim() : null,
     };
 
     if (!event.eventId || !event.title) {
@@ -207,8 +260,25 @@ export default function TeacherScreen() {
       return;
     }
 
+    if (!event.attendance_purpose || !program || !yearLevel || !block) {
+      setMessage(
+        "Attendance purpose, program, year level and block are required.",
+      );
+      return;
+    }
+
     if (endDate.getTime() <= startDate.getTime()) {
       setMessage("End time must be after start time.");
+      return;
+    }
+
+    if (
+      lateMode === "exact" &&
+      !resolveExactCutoff(startDate, endDate, lateCutoffTime)
+    ) {
+      setMessage(
+        "Enter a valid Late After time (HH:MM) within the event schedule.",
+      );
       return;
     }
 
@@ -218,17 +288,10 @@ export default function TeacherScreen() {
         return;
       }
 
-      setMessage("Event saved! Scan the QR with the Scan tab to test it.");
-
-      setPayload(
-        JSON.stringify({
-          v: 1,
-          event: event.eventId,
-          title: event.title,
-          start: event.start,
-          end: event.end,
-        })
+      setMessage(
+        "Event saved! Tap the event in Your Events to view its QR code.",
       );
+      setSelectedEventId(null);
 
       if (user) {
         getEventsByTeacher(user.id).then((events) => {
@@ -240,17 +303,8 @@ export default function TeacherScreen() {
   };
 
   const handleShowExisting = (ev: CloudEvent) => {
-    setMessage("Showing QR for an existing event:");
-
-    setPayload(
-      JSON.stringify({
-        v: 1,
-        event: ev.event_code,
-        title: ev.title,
-        start: ev.start_time ?? "",
-        end: ev.end_time ?? "",
-      })
-    );
+    setSelectedEventId((current) => (current === ev.id ? null : ev.id));
+    setMessage(null);
   };
 
   const refreshEvents = () => {
@@ -262,23 +316,72 @@ export default function TeacherScreen() {
     });
   };
 
-  const applyTypedTime = () => {
-    const start = parseTypedDateTime(startDateText, startTimeText);
-    const end = parseTypedDateTime(endDateText, endTimeText);
-
-    if (!start || !end) {
-      setMessage("Use YYYY-MM-DD for date and HH:MM for time.");
+  const loadEventAttendance = async (ev: CloudEvent) => {
+    if (!user || ev.created_by !== user.id) {
+      setAttendanceError("This event is not assigned to your account.");
       return;
     }
+    setAttendanceLoading(true);
+    setAttendanceError(null);
+    try {
+      // Query only students assigned to this event, not every school account.
+      if (!ev.program || !ev.year_level || !ev.block) {
+        setAttendanceRows([]);
+        setAttendanceError(
+          "Set the target Program, Year Level and Block for this event first.",
+        );
+        return;
+      }
+      const [studentsResult, scansResult] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, program, year_level, block")
+          .eq("role", "student")
+          .eq("program", ev.program)
+          .eq("year_level", ev.year_level)
+          .eq("block", ev.block),
+        supabase
+          .from("attendance")
+          .select("student_id, scanned_at")
+          .eq("event_id", ev.id),
+      ]);
+      if (studentsResult.error) throw studentsResult.error;
+      if (scansResult.error) throw scansResult.error;
+      const students = (studentsResult.data ?? []) as StudentEntry[];
+      const scans = (scansResult.data ?? []) as ScanEntry[];
+      const scanMap = new Map(
+        scans.map((scan) => [scan.student_id, scan.scanned_at]),
+      );
+      const now = new Date();
+      setAttendanceRows(
+        students.map((student) => {
+          const scannedAt = scanMap.get(student.id) ?? null;
+          return {
+            student,
+            scannedAt,
+            status: getAttendanceStatus(scannedAt, ev, now),
+          };
+        }),
+      );
+    } catch (error) {
+      setAttendanceRows([]);
+      setAttendanceError(
+        error instanceof Error ? error.message : "Unable to load attendance.",
+      );
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
 
-    if (end.getTime() <= start.getTime()) {
-      setMessage("End time must be after start time.");
+  const toggleEventAttendance = (ev: CloudEvent) => {
+    if (attendanceEventId === ev.id) {
+      setAttendanceEventId(null);
+      setAttendanceRows([]);
       return;
     }
-
-    setStartDate(start);
-    setEndDate(end);
-    setMessage("Date and time set from the fields above.");
+    setAttendanceEventId(ev.id);
+    setStatusFilter("present");
+    void loadEventAttendance(ev);
   };
 
   const handleEditEvent = (ev: CloudEvent) => {
@@ -287,11 +390,18 @@ export default function TeacherScreen() {
     setEditingEvent(ev);
     setTitle(ev.title);
     setEventId(ev.event_code);
+    setAttendancePurpose(ev.attendance_purpose ?? "");
+    setProgram(ev.program ?? "");
+    setYearLevel(ev.year_level ?? "");
+    setBlock(ev.block ?? "");
+    setLateMode(ev.late_mode === "exact" ? "exact" : "minutes");
+    setLateMinutes(ev.late_minutes ?? 15);
+    setLateCutoffTime(ev.late_cutoff_time ?? "08:15");
 
     if (ev.start_time) setStartDate(new Date(ev.start_time));
     if (ev.end_time) setEndDate(new Date(ev.end_time));
 
-    setPayload(null);
+    setSelectedEventId(null);
   };
 
   const handleCancelEdit = () => {
@@ -300,6 +410,13 @@ export default function TeacherScreen() {
     setEditingEvent(null);
     setTitle("");
     setEventId("");
+    setAttendancePurpose("");
+    setProgram("");
+    setYearLevel("");
+    setBlock("");
+    setLateMode("minutes");
+    setLateMinutes(15);
+    setLateCutoffTime("08:15");
   };
 
   const handleUpdateEvent = () => {
@@ -310,10 +427,24 @@ export default function TeacherScreen() {
       title: title.trim(),
       start: toLocalISO(startDate),
       end: toLocalISO(endDate),
+      attendance_purpose: attendancePurpose.trim(),
+      program,
+      year_level: yearLevel,
+      block,
+      late_mode: lateMode,
+      late_minutes: lateMode === "minutes" ? lateMinutes : null,
+      late_cutoff_time: lateMode === "exact" ? lateCutoffTime.trim() : null,
     };
 
     if (!event.eventId || !event.title) {
       setMessage("Event title and code are required.");
+      return;
+    }
+
+    if (!event.attendance_purpose || !program || !yearLevel || !block) {
+      setMessage(
+        "Attendance purpose, program, year level and block are required.",
+      );
       return;
     }
 
@@ -322,29 +453,39 @@ export default function TeacherScreen() {
       return;
     }
 
+    if (
+      lateMode === "exact" &&
+      !resolveExactCutoff(startDate, endDate, lateCutoffTime)
+    ) {
+      setMessage(
+        "Enter a valid Late After time (HH:MM) within the event schedule.",
+      );
+      return;
+    }
+
     updateEvent(editingEvent.id, {
       event_code: event.eventId,
       title: event.title,
       start_time: event.start,
       end_time: event.end,
+      attendance_purpose: event.attendance_purpose,
+      program: event.program,
+      year_level: event.year_level,
+      block: event.block,
+      late_mode: event.late_mode,
+      late_minutes: event.late_minutes,
+      late_cutoff_time: event.late_cutoff_time,
     }).then(({ error }) => {
       if (error) {
         setMessage("Could not update the event. Please try again.");
         return;
       }
 
-      setMessage("Event updated! The QR below is the updated one.");
-
-      setEditingEvent(null);
-      setPayload(
-        JSON.stringify({
-          v: 1,
-          event: event.eventId,
-          title: event.title,
-          start: event.start,
-          end: event.end,
-        })
+      setMessage(
+        "Event updated! Tap the event in Your Events to view its QR code.",
       );
+      setEditingEvent(null);
+      setSelectedEventId(null);
       refreshEvents();
     });
   };
@@ -367,10 +508,8 @@ export default function TeacherScreen() {
 
               setMessage("Event deleted.");
 
-              if (editingEvent?.id === ev.id) {
-                setEditingEvent(null);
-                setPayload(null);
-              }
+              if (editingEvent?.id === ev.id) setEditingEvent(null);
+              if (selectedEventId === ev.id) setSelectedEventId(null);
 
               refreshEvents();
             });
@@ -412,6 +551,25 @@ export default function TeacherScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
+      <Pressable
+        style={styles.manageStudentsButton}
+        onPress={() => router.push("/teacher/students")}
+        accessibilityRole="button"
+        accessibilityLabel="Manage student academic information"
+      >
+        <Ionicons
+          name="people-outline"
+          size={20}
+          color={COLORS.textOnPrimary}
+        />
+        <Text style={styles.manageStudentsText}>Manage Students</Text>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={COLORS.textOnPrimary}
+        />
+      </Pressable>
+
       <Text style={styles.title}>Create Event QR</Text>
 
       <Text style={styles.subtitle}>
@@ -439,6 +597,15 @@ export default function TeacherScreen() {
         autoCapitalize="characters"
       />
 
+      <Text style={styles.label}>Attendance Purpose</Text>
+      <TextInput
+        style={styles.input}
+        value={attendancePurpose}
+        onChangeText={setAttendancePurpose}
+        placeholder="e.g. Class Attendance, Seminar, Meeting"
+        placeholderTextColor={COLORS.textSecondary}
+      />
+
       <Text style={styles.label}>Starts</Text>
 
       {Platform.OS === "web" ? (
@@ -463,60 +630,6 @@ export default function TeacherScreen() {
         />
       )}
 
-      <Text style={styles.label}>Or type the date & time manually</Text>
-
-      <Text style={styles.fieldLabel}>Start Date (YYYY-MM-DD)</Text>
-
-      <TextInput
-        style={styles.input}
-        value={startDateText}
-        onChangeText={setStartDateText}
-        placeholder="e.g. 2026-10-05"
-        placeholderTextColor={COLORS.textSecondary}
-        autoCapitalize="none"
-      />
-
-      <Text style={styles.fieldLabel}>Start Time (HH:MM)</Text>
-
-      <TextInput
-        style={styles.input}
-        value={startTimeText}
-        onChangeText={setStartTimeText}
-        placeholder="e.g. 09:00"
-        placeholderTextColor={COLORS.textSecondary}
-        autoCapitalize="none"
-        keyboardType="numbers-and-punctuation"
-      />
-
-      <Text style={styles.fieldLabel}>End Date (YYYY-MM-DD)</Text>
-
-      <TextInput
-        style={styles.input}
-        value={endDateText}
-        onChangeText={setEndDateText}
-        placeholder="e.g. 2026-10-05"
-        placeholderTextColor={COLORS.textSecondary}
-        autoCapitalize="none"
-      />
-
-      <Text style={styles.fieldLabel}>End Time (HH:MM)</Text>
-
-      <TextInput
-        style={styles.input}
-        value={endTimeText}
-        onChangeText={setEndTimeText}
-        placeholder="e.g. 11:00"
-        placeholderTextColor={COLORS.textSecondary}
-        autoCapitalize="none"
-        keyboardType="numbers-and-punctuation"
-      />
-
-      <AppButton
-        title="Apply Typed Date & Time"
-        icon="checkmark-circle-outline"
-        onPress={applyTypedTime}
-      />
-
       <View style={styles.chipRow}>
         {QUICK_END_OPTIONS.map((option) => (
           <Pressable
@@ -533,6 +646,142 @@ export default function TeacherScreen() {
         Tap a chip to set the end time from start.
       </Text>
 
+      <Text style={styles.sectionTitle}>Target Students</Text>
+      <Text style={styles.hint}>
+        Select the program, year level, and block this attendance is for.
+      </Text>
+      <AcademicSelect
+        label="Program *"
+        value={program}
+        placeholder="Select program"
+        options={PROGRAMS}
+        onChange={setProgram}
+      />
+      <AcademicSelect
+        label="Year Level *"
+        value={yearLevel}
+        placeholder="Select year level"
+        options={YEAR_LEVELS}
+        onChange={(value) => {
+          setYearLevel(value);
+          setBlock("");
+        }}
+      />
+      <AcademicSelect
+        label="Block *"
+        value={block}
+        placeholder={yearLevel ? "Select block" : "Select year level first"}
+        disabled={!yearLevel}
+        options={
+          yearLevel
+            ? BLOCKS.filter((item) =>
+                item.startsWith(String(YEAR_LEVELS.indexOf(yearLevel) + 1)),
+              )
+            : []
+        }
+        onChange={setBlock}
+      />
+
+      <Text style={[styles.sectionTitle, styles.lateSectionTitle]}>
+        Attendance Settings
+      </Text>
+      <Text style={styles.hint}>
+        Choose when a student scan should be marked Late.
+      </Text>
+
+      <View style={styles.lateModeRow}>
+        <Pressable
+          style={[
+            styles.lateModeButton,
+            lateMode === "minutes" && styles.lateModeSelected,
+          ]}
+          onPress={() => setLateMode("minutes")}
+          accessibilityRole="button"
+          accessibilityState={{ selected: lateMode === "minutes" }}
+        >
+          <Text
+            style={[
+              styles.lateModeText,
+              lateMode === "minutes" && styles.lateModeSelectedText,
+            ]}
+          >
+            Minutes after start
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.lateModeButton,
+            lateMode === "exact" && styles.lateModeSelected,
+          ]}
+          onPress={() => setLateMode("exact")}
+          accessibilityRole="button"
+          accessibilityState={{ selected: lateMode === "exact" }}
+        >
+          <Text
+            style={[
+              styles.lateModeText,
+              lateMode === "exact" && styles.lateModeSelectedText,
+            ]}
+          >
+            Exact cutoff time
+          </Text>
+        </Pressable>
+      </View>
+
+      {lateMode === "minutes" ? (
+        <>
+          <Text style={styles.label}>Grace Period</Text>
+          <View style={styles.graceRow}>
+            {GRACE_PERIODS.map((minutes) => (
+              <Pressable
+                key={minutes}
+                style={[
+                  styles.graceChip,
+                  lateMinutes === minutes && styles.graceChipSelected,
+                ]}
+                onPress={() => setLateMinutes(minutes)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: lateMinutes === minutes }}
+              >
+                <Text
+                  style={[
+                    styles.graceChipText,
+                    lateMinutes === minutes && styles.graceChipSelectedText,
+                  ]}
+                >
+                  {minutes} min
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.hint}>
+            Late after{" "}
+            {formatDateTime(
+              new Date(startDate.getTime() + lateMinutes * 60000),
+            )}
+            .
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.label}>Late After (HH:MM, 24-hour)</Text>
+          <TextInput
+            style={styles.input}
+            value={lateCutoffTime}
+            onChangeText={setLateCutoffTime}
+            placeholder="e.g. 08:15"
+            placeholderTextColor={COLORS.textSecondary}
+            keyboardType="numbers-and-punctuation"
+            maxLength={5}
+            autoCapitalize="none"
+          />
+          <Text style={styles.hint}>
+            Use the event's local time. The cutoff must be between Starts and
+            Ends.
+          </Text>
+        </>
+      )}
+
       {message && <Text style={styles.message}>{message}</Text>}
 
       {editingEvent ? (
@@ -544,10 +793,7 @@ export default function TeacherScreen() {
             onPress={handleUpdateEvent}
           />
 
-          <Pressable
-            style={styles.cancelEditButton}
-            onPress={handleCancelEdit}
-          >
+          <Pressable style={styles.cancelEditButton} onPress={handleCancelEdit}>
             <Text style={styles.cancelEditText}>Cancel Editing</Text>
           </Pressable>
         </View>
@@ -569,7 +815,7 @@ export default function TeacherScreen() {
       </View>
 
       <Text style={styles.sectionHint}>
-        Tap an existing event to show its QR code again.
+        Tap an event to show or hide its QR code.
       </Text>
 
       {existingLoading ? (
@@ -579,59 +825,252 @@ export default function TeacherScreen() {
       ) : (
         <View>
           {existingEvents.map((ev) => (
-            <View key={ev.id} style={styles.existingCard}>
-              <Pressable
-                style={styles.existingMain}
-                onPress={() => handleShowExisting(ev)}
-              >
-                <Ionicons
-                  name="qr-code-outline"
-                  size={20}
-                  color={COLORS.primary}
-                />
-
-                <View style={styles.existingInfo}>
-                  <Text style={styles.existingTitle}>{ev.title}</Text>
-
-                  <Text style={styles.existingCode}>
-                    {ev.event_code}
-                    {ev.start_time
-                      ? `  •  ${formatDateTime(new Date(ev.start_time))}`
-                      : ""}
-                  </Text>
-                </View>
-              </Pressable>
-
-              <View style={styles.existingActions}>
+            <View key={ev.id}>
+              <View style={styles.existingCard}>
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    pressed && styles.actionButtonPressed,
-                  ]}
-                  onPress={() => handleEditEvent(ev)}
+                  style={styles.existingMain}
+                  onPress={() => handleShowExisting(ev)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${ev.title}. ${selectedEventId === ev.id ? "Hide" : "Show"} QR code`}
                 >
                   <Ionicons
-                    name="pencil-outline"
-                    size={18}
+                    name={
+                      selectedEventId === ev.id ? "qr-code" : "qr-code-outline"
+                    }
+                    size={20}
                     color={COLORS.primary}
                   />
+
+                  <View style={styles.existingInfo}>
+                    <Text style={styles.existingTitle}>{ev.title}</Text>
+                    <Text style={styles.existingCode}>
+                      Target:{" "}
+                      {[ev.program, ev.year_level, ev.block]
+                        .filter(Boolean)
+                        .join(" • ") || "Not assigned"}
+                    </Text>
+                    <Text style={styles.existingCode}>
+                      Starts:{" "}
+                      {ev.start_time
+                        ? formatDateTime(new Date(ev.start_time))
+                        : "Not set"}
+                    </Text>
+                    <Text style={styles.existingCode}>
+                      Ends:{" "}
+                      {ev.end_time
+                        ? formatDateTime(new Date(ev.end_time))
+                        : "Not set"}
+                    </Text>
+                  </View>
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    styles.dangerButton,
-                    pressed && styles.actionButtonPressed,
-                  ]}
-                  onPress={() => handleDeleteEvent(ev)}
-                >
-                  <Ionicons
-                    name="trash-outline"
-                    size={18}
-                    color={COLORS.danger}
-                  />
-                </Pressable>
+                <View style={styles.existingActions}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.actionButton,
+                      pressed && styles.actionButtonPressed,
+                    ]}
+                    onPress={() => handleEditEvent(ev)}
+                    accessibilityLabel={`Edit ${ev.title}`}
+                  >
+                    <Ionicons
+                      name="pencil-outline"
+                      size={18}
+                      color={COLORS.primary}
+                    />
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.actionButton,
+                      styles.dangerButton,
+                      pressed && styles.actionButtonPressed,
+                    ]}
+                    onPress={() => handleDeleteEvent(ev)}
+                    accessibilityLabel={`Delete ${ev.title}`}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color={COLORS.danger}
+                    />
+                  </Pressable>
+                </View>
               </View>
+
+              <Pressable
+                style={styles.attendanceToggle}
+                onPress={() => toggleEventAttendance(ev)}
+                accessibilityRole="button"
+                accessibilityLabel={`${attendanceEventId === ev.id ? "Hide" : "View"} attendance for ${ev.title}`}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={18}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.attendanceToggleText}>
+                  {attendanceEventId === ev.id
+                    ? "Hide Attendance"
+                    : "View Attendance"}
+                </Text>
+                <Ionicons
+                  name={
+                    attendanceEventId === ev.id ? "chevron-up" : "chevron-down"
+                  }
+                  size={18}
+                  color={COLORS.primary}
+                />
+              </Pressable>
+
+              {attendanceEventId === ev.id && (
+                <View style={styles.attendancePanel}>
+                  <View style={styles.attendanceHeading}>
+                    <Text style={styles.sectionTitle}>
+                      Attendance — {ev.title}
+                    </Text>
+                    <Pressable
+                      onPress={() => void loadEventAttendance(ev)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Refresh attendance"
+                    >
+                      <Ionicons
+                        name="refresh-outline"
+                        size={21}
+                        color={COLORS.primary}
+                      />
+                    </Pressable>
+                  </View>
+                  {attendanceLoading ? (
+                    <Text style={styles.sectionHint}>
+                      Loading attendance...
+                    </Text>
+                  ) : attendanceError ? (
+                    <Text style={styles.attendanceNotice}>
+                      {attendanceError}
+                    </Text>
+                  ) : (
+                    <>
+                      <View style={styles.statusGrid}>
+                        {STATUS_FILTERS.map((filter) => {
+                          const count = attendanceRows.filter(
+                            (row) => row.status === filter.key,
+                          ).length;
+                          const selected = statusFilter === filter.key;
+                          return (
+                            <Pressable
+                              key={filter.key}
+                              onPress={() => setStatusFilter(filter.key)}
+                              style={[
+                                styles.statusButton,
+                                selected && styles.statusButtonActive,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected }}
+                            >
+                              <Text
+                                style={[
+                                  styles.statusCount,
+                                  selected && styles.statusTextActive,
+                                ]}
+                              >
+                                {count}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.statusLabel,
+                                  selected && styles.statusTextActive,
+                                ]}
+                              >
+                                {filter.label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                      <Text style={styles.attendanceListTitle}>
+                        {
+                          STATUS_FILTERS.find(
+                            (filter) => filter.key === statusFilter,
+                          )?.label
+                        }{" "}
+                        Students
+                      </Text>
+                      {attendanceRows.filter(
+                        (row) => row.status === statusFilter,
+                      ).length === 0 ? (
+                        <Text style={styles.sectionHint}>
+                          No students in this category.
+                        </Text>
+                      ) : (
+                        attendanceRows
+                          .filter((row) => row.status === statusFilter)
+                          .map((row) => (
+                            <View
+                              key={row.student.id}
+                              style={styles.studentLine}
+                            >
+                              <View style={styles.studentLineInfo}>
+                                <Text style={styles.studentLineName}>
+                                  {row.student.full_name || "Unnamed student"}
+                                </Text>
+                                <Text style={styles.sectionHint}>
+                                  {row.student.email || "No email"}
+                                </Text>
+                              </View>
+                              <Text style={styles.studentLineTime}>
+                                {row.scannedAt
+                                  ? formatDateTime(new Date(row.scannedAt))
+                                  : "No scan"}
+                              </Text>
+                            </View>
+                          ))
+                      )}
+                      <Text style={styles.attendanceNote}>
+                        Absent is finalized after the event ends. Pending
+                        includes students with no scan before the end, or scans
+                        whose Late cutoff is not configured.
+                      </Text>
+                    </>
+                  )}
+                </View>
+              )}
+
+              {selectedEventId === ev.id && (
+                <View style={styles.resultCard}>
+                  <Text style={styles.resultTitle}>{ev.title}</Text>
+                  <Text style={styles.qrDetail}>
+                    Target Students:{" "}
+                    {[ev.program, ev.year_level, ev.block]
+                      .filter(Boolean)
+                      .join(" • ") || "Not assigned"}
+                  </Text>
+                  <Text style={styles.qrDetail}>
+                    Starts:{" "}
+                    {ev.start_time
+                      ? formatDateTime(new Date(ev.start_time))
+                      : "Not set"}
+                  </Text>
+                  <Text style={styles.qrDetail}>
+                    Ends:{" "}
+                    {ev.end_time
+                      ? formatDateTime(new Date(ev.end_time))
+                      : "Not set"}
+                  </Text>
+                  <View style={styles.qrBox}>
+                    <QRCode
+                      value={JSON.stringify({
+                        v: 1,
+                        event: ev.event_code,
+                        title: ev.title,
+                        start: ev.start_time ?? "",
+                        end: ev.end_time ?? "",
+                      })}
+                      size={200}
+                    />
+                  </View>
+                </View>
+              )}
             </View>
           ))}
         </View>
@@ -640,25 +1079,12 @@ export default function TeacherScreen() {
       {editTarget && (
         <View style={styles.pickerContainer}>
           <DateTimePicker
+            key={`${editTarget}-${editingPart}`}
             value={editTarget === "start" ? startDate : endDate}
             mode={isAndroid ? editingPart : "datetime"}
             display={isAndroid ? "default" : "spinner"}
             onChange={onPickerChange}
           />
-        </View>
-      )}
-
-      {payload && (
-        <View style={styles.resultCard}>
-          <Text style={styles.resultTitle}>
-            Scan this QR code with the Scan tab:
-          </Text>
-
-          <View style={styles.qrBox}>
-            <QRCode value={payload} size={200} />
-          </View>
-
-          <Text style={styles.payloadText}>{payload}</Text>
         </View>
       )}
     </ScrollView>
@@ -688,7 +1114,7 @@ function WebDateTimeInput({
 }) {
   return createElement("input", {
     type: "datetime-local",
-    value: toLocalISO(value).slice(0, 16),
+    value: toDateTimeLocalValue(value),
     onChange: (e: ChangeEvent<HTMLInputElement>) => {
       const text = e.target.value;
       if (!text) return;
@@ -732,6 +1158,22 @@ function PickerField({ value, icon, onPress }: PickerFieldProps) {
 }
 
 const styles = StyleSheet.create({
+  manageStudentsButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 22,
+  },
+  manageStudentsText: {
+    color: COLORS.textOnPrimary,
+    fontWeight: "700",
+    fontSize: 14,
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -814,13 +1256,6 @@ const styles = StyleSheet.create({
   pickerContainer: {
     marginTop: 12,
     alignItems: "center",
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-    marginTop: 12,
   },
   editControls: {
     marginTop: 4,
@@ -916,6 +1351,129 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 12,
   },
+  lateSectionTitle: { marginTop: 22 },
+  lateModeRow: { flexDirection: "row", marginTop: 12, marginBottom: 8, gap: 8 },
+  lateModeButton: {
+    flex: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    backgroundColor: COLORS.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lateModeSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  lateModeText: {
+    color: COLORS.textPrimary,
+    fontWeight: "600",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  lateModeSelectedText: { color: COLORS.textOnPrimary },
+  graceRow: { flexDirection: "row", flexWrap: "wrap", marginTop: 8, gap: 8 },
+  graceChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  graceChipSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  graceChipText: { fontSize: 13, fontWeight: "600", color: COLORS.textPrimary },
+  graceChipSelectedText: { color: COLORS.textOnPrimary },
+  attendanceToggle: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  attendanceToggleText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  attendancePanel: {
+    backgroundColor: COLORS.card,
+    padding: 14,
+    borderRadius: 14,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  attendanceHeading: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  attendanceNotice: { color: COLORS.danger, fontSize: 12, lineHeight: 19 },
+  statusGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  statusButton: {
+    flexGrow: 1,
+    flexBasis: "22%",
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  statusButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  statusCount: { fontSize: 21, fontWeight: "800", color: COLORS.textPrimary },
+  statusLabel: { fontSize: 10, fontWeight: "700", color: COLORS.textSecondary },
+  statusTextActive: { color: COLORS.textOnPrimary },
+  attendanceListTitle: {
+    marginTop: 16,
+    marginBottom: 8,
+    color: COLORS.textPrimary,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  studentLine: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  studentLineInfo: { flex: 1 },
+  studentLineName: {
+    color: COLORS.textPrimary,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  studentLineTime: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    maxWidth: 120,
+    textAlign: "right",
+  },
+  attendanceNote: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 12,
+  },
   resultCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -943,11 +1501,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 10,
     marginBottom: 12,
+    marginTop: 12,
   },
-  payloadText: {
+  qrDetail: {
     fontSize: 12,
     color: COLORS.textSecondary,
     textAlign: "center",
-    lineHeight: 16,
+    marginBottom: 8,
   },
 });

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "QR-ATT",
+    "name": "QR-AttendEase",
     "slug": "QR-ATT",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,7 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.ciaraaa11.QRATT",
+      "package": "com.ciaraaa11.QRAttendEase",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
